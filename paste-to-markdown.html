@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Paste to Markdown</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-markdown.min.js"></script>
+</head>
+
+<body class="h-full bg-gray-50">
+  <div id="app" class="h-full"></div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "spellcaster": "https://esm.sh/spellcaster@3.1.0/spellcaster.js",
+      "spellcaster/hyperscript": "https://esm.sh/spellcaster@3.1.0/hyperscript.js",
+      "turndown": "https://esm.sh/turndown@7.1.2"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import { signal, effect } from 'spellcaster'
+    import { tags, text } from 'spellcaster/hyperscript'
+    import TurndownService from 'turndown'
+
+    const { div, p } = tags
+    const turndown = new TurndownService({ headingStyle: 'atx' })
+
+    // State: null = empty, string = markdown content
+    const [markdown, setMarkdown] = signal(null)
+
+    const selectAllContent = (element) => {
+      const range = document.createRange()
+      range.selectNodeContents(element)
+      const selection = window.getSelection()
+      selection.removeAllRanges()
+      selection.addRange(range)
+    }
+
+    const handlePaste = (event) => {
+      event.preventDefault()
+      const html = event.clipboardData.getData('text/html')
+      const plainText = event.clipboardData.getData('text/plain')
+
+      if (html) {
+        const md = turndown.turndown(html)
+        setMarkdown(md)
+      } else if (plainText) {
+        setMarkdown(plainText)
+      }
+    }
+
+    const reset = () => {
+      setMarkdown(null)
+    }
+
+    const App = () => {
+      const container = div(
+        () => ({ className: 'h-full flex items-center justify-center p-10' })
+      )
+
+      effect(() => {
+        const md = markdown()
+        container.innerHTML = ''
+
+        if (md === null) {
+          const instructions = p(
+            { className: 'text-gray-400 text-2xl select-none' },
+            text('Paste your content (Ctrl+V)')
+          )
+          container.appendChild(instructions)
+        } else {
+          const output = document.createElement('pre')
+          output.className = 'w-full h-full p-6 bg-white rounded-lg shadow-sm overflow-auto whitespace-pre-wrap font-mono text-sm focus:outline-none language-markdown'
+          output.contentEditable = 'true'
+          output.innerHTML = Prism.highlight(md, Prism.languages.markdown, 'markdown')
+          container.appendChild(output)
+
+          requestAnimationFrame(() => {
+            output.focus()
+            selectAllContent(output)
+          })
+
+          output.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+              reset()
+            }
+          })
+
+          // Ensure plain markdown is copied, not highlighted HTML
+          output.addEventListener('copy', (e) => {
+            e.preventDefault()
+            e.clipboardData.setData('text/plain', md)
+          })
+        }
+      })
+
+      return container
+    }
+
+    const app = document.getElementById('app')
+    app.appendChild(App())
+
+    document.addEventListener('paste', handlePaste)
+  </script>
+
+</body>
+
+</html>
