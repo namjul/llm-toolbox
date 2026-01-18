@@ -17,6 +17,7 @@ Constraints:
 - **esm.sh** for npm packages (e.g., `https://esm.sh/package@version`)
 - **No TypeScript** - plain JavaScript only
 - **Single file** - all HTML, CSS, and JS in one file
+- **No script tags for JS libraries** - all JavaScript dependencies must be loaded via importmap, never via `<script src="...">` tags (CSS stylesheets via `<link>` are fine)
 
 ## Template Structure
 

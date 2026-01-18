@@ -6,9 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Paste to Markdown</title>
   <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism.min.css" />
-  <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-markdown.min.js"></script>
+  <link rel="stylesheet" href="https://esm.sh/prismjs@1.29.0/themes/prism.min.css" />
 </head>
 
 <body class="h-full bg-gray-50">
@@ -19,7 +17,10 @@
     "imports": {
       "spellcaster": "https://esm.sh/spellcaster@3.1.0/spellcaster.js",
       "spellcaster/hyperscript": "https://esm.sh/spellcaster@3.1.0/hyperscript.js",
-      "turndown": "https://esm.sh/turndown@7.1.2"
+      "turndown": "https://esm.sh/turndown@7.1.2",
+      "prismjs": "https://esm.sh/prismjs@1.29.0",
+      "prismjs/components/prism-markdown": "https://esm.sh/prismjs@1.29.0/components/prism-markdown.js",
+      "@mozilla/readability": "https://esm.sh/@mozilla/readability@0.5.0"
     }
   }
   </script>
@@ -28,12 +29,137 @@
     import { signal, effect } from 'spellcaster'
     import { tags, text } from 'spellcaster/hyperscript'
     import TurndownService from 'turndown'
+    import Prism from 'prismjs'
+    import 'prismjs/components/prism-markdown'
+    import { Readability } from '@mozilla/readability'
 
     const { div, p } = tags
     const turndown = new TurndownService({ headingStyle: 'atx' })
 
-    // State: null = empty, string = markdown content
-    const [markdown, setMarkdown] = signal(null)
+    // State: 'empty' | 'loading' | { content: string }
+    const [state, setState] = signal('empty')
+
+    const isUrl = (text) => {
+      const trimmed = text.trim()
+      return /^https?:\/\/\S+$/i.test(trimmed)
+    }
+
+    const extractDate = (doc, article) => {
+      // 1. Readability's publishedTime
+      if (article.publishedTime) {
+        return article.publishedTime
+      }
+
+      // 2. Open Graph article:published_time
+      const ogDate = doc.querySelector('meta[property="article:published_time"]')
+      if (ogDate?.content) return ogDate.content
+
+      // 3. meta name="date"
+      const metaDate = doc.querySelector('meta[name="date"]')
+      if (metaDate?.content) return metaDate.content
+
+      // 4. meta name="pubdate"
+      const pubDate = doc.querySelector('meta[name="pubdate"]')
+      if (pubDate?.content) return pubDate.content
+
+      // 5. schema.org datePublished
+      const schemaDate = doc.querySelector('meta[property="datePublished"]')
+      if (schemaDate?.content) return schemaDate.content
+
+      // 6. JSON-LD datePublished
+      const jsonLd = doc.querySelector('script[type="application/ld+json"]')
+      if (jsonLd) {
+        try {
+          const data = JSON.parse(jsonLd.textContent)
+          const findDate = (obj) => {
+            if (!obj || typeof obj !== 'object') return null
+            if (obj.datePublished) return obj.datePublished
+            if (Array.isArray(obj)) {
+              for (const item of obj) {
+                const found = findDate(item)
+                if (found) return found
+              }
+            }
+            return null
+          }
+          const found = findDate(data)
+          if (found) return found
+        } catch (e) {}
+      }
+
+      // 7. time element with datetime
+      const timeEl = doc.querySelector('time[datetime]')
+      if (timeEl?.datetime) return timeEl.datetime
+
+      return null
+    }
+
+    const formatDate = (dateStr) => {
+      try {
+        const date = new Date(dateStr)
+        if (isNaN(date.getTime())) return null
+        return date.toISOString().split('T')[0]
+      } catch (e) {
+        return null
+      }
+    }
+
+    const buildMarkdown = (article, contentMd) => {
+      const lines = []
+
+      if (article.title) {
+        lines.push(`title: ${article.title}`)
+      }
+
+      if (article.date) {
+        const formatted = formatDate(article.date)
+        if (formatted) {
+          lines.push(`date: ${formatted}`)
+        }
+      }
+
+      if (article.source) {
+        lines.push(`source: ${article.source}`)
+      }
+
+      if (lines.length > 0) {
+        return lines.join('\n') + '\n\n' + contentMd
+      }
+
+      return contentMd
+    }
+
+    const fetchArticle = async (url) => {
+      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`
+      const response = await fetch(proxyUrl)
+      const html = await response.text()
+
+      const parser = new DOMParser()
+      const doc = parser.parseFromString(html, 'text/html')
+
+      // Fix relative URLs for images and links
+      const base = new URL(url)
+      doc.querySelectorAll('img[src]').forEach(img => {
+        img.src = new URL(img.getAttribute('src'), base).href
+      })
+      doc.querySelectorAll('a[href]').forEach(a => {
+        try {
+          a.href = new URL(a.getAttribute('href'), base).href
+        } catch (e) {}
+      })
+
+      const reader = new Readability(doc)
+      const article = reader.parse()
+
+      if (!article) {
+        throw new Error('Could not extract article content')
+      }
+
+      const date = extractDate(doc, article)
+      const contentMd = turndown.turndown(article.content)
+
+      return buildMarkdown({ title: article.title, date, source: url }, contentMd)
+    }
 
     const selectAllContent = (element) => {
       const range = document.createRange()
@@ -43,21 +169,34 @@
       selection.addRange(range)
     }
 
-    const handlePaste = (event) => {
+    const handlePaste = async (event) => {
       event.preventDefault()
       const html = event.clipboardData.getData('text/html')
       const plainText = event.clipboardData.getData('text/plain')
 
+      // Check if plain text is a URL
+      if (plainText && isUrl(plainText)) {
+        setState('loading')
+        try {
+          const md = await fetchArticle(plainText.trim())
+          setState({ content: md })
+        } catch (error) {
+          setState({ content: `Error: ${error.message}` })
+        }
+        return
+      }
+
+      // Otherwise, handle as rich text
       if (html) {
         const md = turndown.turndown(html)
-        setMarkdown(md)
+        setState({ content: md })
       } else if (plainText) {
-        setMarkdown(plainText)
+        setState({ content: plainText })
       }
     }
 
     const reset = () => {
-      setMarkdown(null)
+      setState('empty')
     }
 
     const App = () => {
@@ -66,18 +205,25 @@
       )
 
       effect(() => {
-        const md = markdown()
+        const current = state()
         container.innerHTML = ''
 
-        if (md === null) {
+        if (current === 'empty') {
           const instructions = p(
             { className: 'text-gray-400 text-2xl select-none' },
-            text('Paste your content (Ctrl+V)')
+            text('Paste content or URL (Ctrl+V)')
           )
           container.appendChild(instructions)
+        } else if (current === 'loading') {
+          const loading = p(
+            { className: 'text-gray-400 text-2xl select-none' },
+            text('Loading article...')
+          )
+          container.appendChild(loading)
         } else {
+          const md = current.content
           const output = document.createElement('pre')
-          output.className = 'w-full h-full p-6 bg-white rounded-lg shadow-sm overflow-auto whitespace-pre-wrap font-mono text-sm focus:outline-none language-markdown'
+          output.className = 'w-full h-full p-6 bg-white rounded-lg shadow-sm overflow-auto !whitespace-pre-wrap !break-words font-mono text-sm focus:outline-none language-markdown'
           output.contentEditable = 'true'
           output.innerHTML = Prism.highlight(md, Prism.languages.markdown, 'markdown')
           container.appendChild(output)
