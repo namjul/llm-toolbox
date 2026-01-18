@@ -10,7 +10,7 @@
 </head>
 
 <body class="h-full bg-gray-50">
-  <div id="app" class="h-full"></div>
+  <div id="app" class="h-full flex flex-col"></div>
 
   <script type="importmap">
   {
@@ -20,6 +20,7 @@
       "turndown": "https://esm.sh/turndown@7.1.2",
       "prismjs": "https://esm.sh/prismjs@1.29.0",
       "prismjs/components/prism-markdown": "https://esm.sh/prismjs@1.29.0/components/prism-markdown.js",
+      "prismjs/components/prism-bash": "https://esm.sh/prismjs@1.29.0/components/prism-bash.js",
       "@mozilla/readability": "https://esm.sh/@mozilla/readability@0.5.0"
     }
   }
@@ -31,42 +32,47 @@
     import TurndownService from 'turndown'
     import Prism from 'prismjs'
     import 'prismjs/components/prism-markdown'
+    import 'prismjs/components/prism-bash'
     import { Readability } from '@mozilla/readability'
 
-    const { div, p } = tags
+    const { div, p, button, input, label, span } = tags
     const turndown = new TurndownService({ headingStyle: 'atx' })
 
-    // State: 'empty' | 'loading' | { content: string }
-    const [state, setState] = signal('empty')
+    // State
+    const [mode, setMode] = signal('copy') // 'copy' | 'file'
+    const [area, setArea] = signal('')
+    const [state, setState] = signal('empty') // 'empty' | 'loading' | { markdown, title, author }
 
     const isUrl = (text) => {
       const trimmed = text.trim()
       return /^https?:\/\/\S+$/i.test(trimmed)
     }
 
-    const extractDate = (doc, article) => {
-      // 1. Readability's publishedTime
-      if (article.publishedTime) {
-        return article.publishedTime
-      }
+    const slugify = (text) => {
+      return text
+        .toLowerCase()
+        .trim()
+        .replace(/[^\w\s-]/g, '')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '')
+    }
 
-      // 2. Open Graph article:published_time
+    const extractDate = (doc, article) => {
+      if (article.publishedTime) return article.publishedTime
+
       const ogDate = doc.querySelector('meta[property="article:published_time"]')
       if (ogDate?.content) return ogDate.content
 
-      // 3. meta name="date"
       const metaDate = doc.querySelector('meta[name="date"]')
       if (metaDate?.content) return metaDate.content
 
-      // 4. meta name="pubdate"
       const pubDate = doc.querySelector('meta[name="pubdate"]')
       if (pubDate?.content) return pubDate.content
 
-      // 5. schema.org datePublished
       const schemaDate = doc.querySelector('meta[property="datePublished"]')
       if (schemaDate?.content) return schemaDate.content
 
-      // 6. JSON-LD datePublished
       const jsonLd = doc.querySelector('script[type="application/ld+json"]')
       if (jsonLd) {
         try {
@@ -87,9 +93,52 @@
         } catch (e) {}
       }
 
-      // 7. time element with datetime
       const timeEl = doc.querySelector('time[datetime]')
       if (timeEl?.datetime) return timeEl.datetime
+
+      return null
+    }
+
+    const extractAuthor = (doc, article) => {
+      // 1. Readability's byline
+      if (article.byline) return article.byline
+
+      // 2. meta name="author"
+      const metaAuthor = doc.querySelector('meta[name="author"]')
+      if (metaAuthor?.content) return metaAuthor.content
+
+      // 3. Open Graph article:author
+      const ogAuthor = doc.querySelector('meta[property="article:author"]')
+      if (ogAuthor?.content) return ogAuthor.content
+
+      // 4. JSON-LD author
+      const jsonLd = doc.querySelector('script[type="application/ld+json"]')
+      if (jsonLd) {
+        try {
+          const data = JSON.parse(jsonLd.textContent)
+          const findAuthor = (obj) => {
+            if (!obj || typeof obj !== 'object') return null
+            if (obj.author) {
+              if (typeof obj.author === 'string') return obj.author
+              if (obj.author.name) return obj.author.name
+              if (Array.isArray(obj.author) && obj.author[0]?.name) return obj.author[0].name
+            }
+            if (Array.isArray(obj)) {
+              for (const item of obj) {
+                const found = findAuthor(item)
+                if (found) return found
+              }
+            }
+            return null
+          }
+          const found = findAuthor(data)
+          if (found) return found
+        } catch (e) {}
+      }
+
+      // 5. rel="author" link
+      const authorLink = doc.querySelector('a[rel="author"]')
+      if (authorLink?.textContent) return authorLink.textContent.trim()
 
       return null
     }
@@ -111,6 +160,10 @@
         lines.push(`title: ${article.title}`)
       }
 
+      if (article.author) {
+        lines.push(`author: ${article.author}`)
+      }
+
       if (article.date) {
         const formatted = formatDate(article.date)
         if (formatted) {
@@ -129,6 +182,14 @@
       return contentMd
     }
 
+    const buildFileCommand = (area, title, markdown) => {
+      const slug = slugify(title || 'untitled')
+      const filename = `${area}.${slug}.md`
+      // Escape single quotes for shell: ' becomes '\''
+      const escaped = markdown.replace(/'/g, "'\\''")
+      return `printf '%s' '${escaped}' > "${filename}"`
+    }
+
     const fetchArticle = async (url) => {
       const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`
       const response = await fetch(proxyUrl)
@@ -137,7 +198,6 @@
       const parser = new DOMParser()
       const doc = parser.parseFromString(html, 'text/html')
 
-      // Fix relative URLs for images and links
       const base = new URL(url)
       doc.querySelectorAll('img[src]').forEach(img => {
         img.src = new URL(img.getAttribute('src'), base).href
@@ -156,9 +216,11 @@
       }
 
       const date = extractDate(doc, article)
+      const author = extractAuthor(doc, article)
       const contentMd = turndown.turndown(article.content)
+      const markdown = buildMarkdown({ title: article.title, author, date, source: url }, contentMd)
 
-      return buildMarkdown({ title: article.title, date, source: url }, contentMd)
+      return { markdown, title: article.title, author }
     }
 
     const selectAllContent = (element) => {
@@ -174,24 +236,22 @@
       const html = event.clipboardData.getData('text/html')
       const plainText = event.clipboardData.getData('text/plain')
 
-      // Check if plain text is a URL
       if (plainText && isUrl(plainText)) {
         setState('loading')
         try {
-          const md = await fetchArticle(plainText.trim())
-          setState({ content: md })
+          const result = await fetchArticle(plainText.trim())
+          setState(result)
         } catch (error) {
-          setState({ content: `Error: ${error.message}` })
+          setState({ markdown: `Error: ${error.message}`, title: null, author: null })
         }
         return
       }
 
-      // Otherwise, handle as rich text
       if (html) {
         const md = turndown.turndown(html)
-        setState({ content: md })
+        setState({ markdown: md, title: null, author: null })
       } else if (plainText) {
-        setState({ content: plainText })
+        setState({ markdown: plainText, title: null, author: null })
       }
     }
 
@@ -199,13 +259,66 @@
       setState('empty')
     }
 
-    const App = () => {
+    const Header = () => {
+      const header = div({ className: 'flex items-center gap-4 p-4 bg-white border-b border-gray-200' })
+
+      const modeToggle = div({ className: 'flex items-center gap-2' })
+
+      const copyBtn = button(
+        {
+          className: 'px-3 py-1 rounded text-sm',
+          onclick: () => setMode('copy')
+        },
+        text('Copy')
+      )
+
+      const fileBtn = button(
+        {
+          className: 'px-3 py-1 rounded text-sm',
+          onclick: () => setMode('file')
+        },
+        text('File')
+      )
+
+      const areaContainer = div({ className: 'flex items-center gap-2' })
+      const areaLabel = label({ className: 'text-sm text-gray-600' }, text('Area:'))
+      const areaInput = input({
+        type: 'text',
+        className: 'px-2 py-1 border border-gray-300 rounded text-sm w-48',
+        placeholder: 'author (default)',
+        oninput: (e) => setArea(e.target.value)
+      })
+      areaContainer.append(areaLabel, areaInput)
+
+      effect(() => {
+        const current = state()
+        if (current !== 'empty' && current !== 'loading' && current.author && !area()) {
+          areaInput.placeholder = slugify(current.author)
+        }
+      })
+
+      modeToggle.append(copyBtn, fileBtn)
+      header.append(modeToggle, areaContainer)
+
+      effect(() => {
+        const currentMode = mode()
+        copyBtn.className = `px-3 py-1 rounded text-sm ${currentMode === 'copy' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'}`
+        fileBtn.className = `px-3 py-1 rounded text-sm ${currentMode === 'file' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'}`
+        areaContainer.style.display = currentMode === 'file' ? 'flex' : 'none'
+      })
+
+      return header
+    }
+
+    const Content = () => {
       const container = div(
-        () => ({ className: 'h-full flex items-center justify-center p-10' })
+        { className: 'flex-1 flex items-center justify-center p-10 overflow-hidden' }
       )
 
       effect(() => {
         const current = state()
+        const currentMode = mode()
+        const currentArea = area()
         container.innerHTML = ''
 
         if (current === 'empty') {
@@ -221,11 +334,19 @@
           )
           container.appendChild(loading)
         } else {
-          const md = current.content
+          const { markdown, title, author } = current
+          const effectiveArea = currentArea || slugify(author || 'unknown')
+          const outputText = currentMode === 'file'
+            ? buildFileCommand(effectiveArea, title, markdown)
+            : markdown
+
+          const lang = currentMode === 'file' ? 'bash' : 'markdown'
+          const grammar = currentMode === 'file' ? Prism.languages.bash : Prism.languages.markdown
+
           const output = document.createElement('pre')
-          output.className = 'w-full h-full p-6 bg-white rounded-lg shadow-sm overflow-auto !whitespace-pre-wrap !break-words font-mono text-sm focus:outline-none language-markdown'
+          output.className = 'w-full h-full p-6 bg-white rounded-lg shadow-sm overflow-auto !whitespace-pre-wrap !break-words font-mono text-sm focus:outline-none'
           output.contentEditable = 'true'
-          output.innerHTML = Prism.highlight(md, Prism.languages.markdown, 'markdown')
+          output.innerHTML = Prism.highlight(outputText, grammar, lang)
           container.appendChild(output)
 
           requestAnimationFrame(() => {
@@ -239,15 +360,20 @@
             }
           })
 
-          // Ensure plain markdown is copied, not highlighted HTML
           output.addEventListener('copy', (e) => {
             e.preventDefault()
-            e.clipboardData.setData('text/plain', md)
+            e.clipboardData.setData('text/plain', outputText)
           })
         }
       })
 
       return container
+    }
+
+    const App = () => {
+      const app = div({ className: 'h-full flex flex-col' })
+      app.append(Header(), Content())
+      return app
     }
 
     const app = document.getElementById('app')

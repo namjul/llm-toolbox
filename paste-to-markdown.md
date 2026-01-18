@@ -8,7 +8,33 @@ Two input modes:
 1. **Rich text**: Copy formatted text from a website, paste here, get Markdown
 2. **URL**: Paste an article URL, tool fetches and extracts the main content as Markdown
 
+## Output Modes
+
+### Copy Mode (default)
+- Output: Markdown text, auto-selected for copying
+
+### File Mode
+- Output: bash/fish command to create a file
+- User provides an "area" prefix (e.g., "reading")
+- Filename: `{area}.{slugified-title}.md`
+
+Example output:
+```bash
+cat > "reading.how-to-build-a-web-app.md" << 'EOF'
+title: How to Build a Web App
+author: John Doe
+date: 2026-01-18
+source: https://example.com
+
+Content here...
+EOF
+```
+
 ## UI Components
+
+### Header Bar
+- Mode toggle: Copy / File
+- Area input (visible in file mode)
 
 ### State 1: Empty (Initial)
 - Full-page paste target
@@ -18,7 +44,7 @@ Two input modes:
 - Loading indicator while fetching and parsing URL
 
 ### State 3: Result
-- Contenteditable div displaying the converted Markdown with syntax highlighting
+- Contenteditable div displaying the output with syntax highlighting
 - All text automatically selected for immediate copy (Ctrl+C)
 - Press Escape to reset to State 1
 
@@ -59,14 +85,34 @@ Two input modes:
   7. `<time datetime>` element
 - Returns ISO date string or null
 
+### `extractAuthor(doc, article)`
+- Extracts author from multiple sources (in order):
+  1. `article.byline` from Readability
+  2. `<meta name="author">`
+  3. `<meta property="article:author">`
+  4. JSON-LD `author.name` in `<script type="application/ld+json">`
+  5. `<a rel="author">` element
+- Returns author string or null
+
+### `slugify(text)`
+- Converts text to URL-friendly slug
+- Lowercase, spaces to hyphens, remove special characters
+- Collapse multiple hyphens
+
 ### `buildMarkdown(article)`
 - Builds markdown with key:value metadata at top
-- Includes title and date (if available)
+- Includes title, author, date, source (if available)
 - Blank line separates metadata from content
+
+### `buildFileCommand(area, title, markdown)`
+- Generates bash/fish-compatible command
+- Filename: `{area}.{slugified-title}.md`
+- Uses heredoc with 'EOF' to handle special characters
 
 Output format:
 ```
 title: Article Title
+author: John Doe
 date: 2026-01-18
 source: https://example.com/article
 
