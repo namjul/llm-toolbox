@@ -190,11 +190,47 @@
       return `printf '%s' '${escaped}' > "${filename}"`
     }
 
+    const extractSubstackContent = (html) => {
+      const preloadsMatch = html.match(/window\._preloads\s*=\s*JSON\.parse\("(.+?)"\)/)
+      if (!preloadsMatch) return null
+
+      try {
+        const jsonStr = preloadsMatch[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+        const preloads = JSON.parse(jsonStr)
+
+        if (preloads.post?.body_html) {
+          return {
+            content: preloads.post.body_html,
+            title: preloads.post.title,
+            date: preloads.post.post_date,
+            author: preloads.post.publishedBylines?.[0]?.name
+          }
+        }
+      } catch (e) {
+        console.log('Failed to parse Substack preloads:', e)
+      }
+      return null
+    }
+
     const fetchArticle = async (url) => {
       const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`
       const response = await fetch(proxyUrl)
       const html = await response.text()
 
+      // Try Substack-specific extraction first
+      const substackContent = extractSubstackContent(html)
+      if (substackContent) {
+        const contentMd = turndown.turndown(substackContent.content)
+        const markdown = buildMarkdown({
+          title: substackContent.title,
+          author: substackContent.author,
+          date: substackContent.date,
+          source: url
+        }, contentMd)
+        return { markdown, title: substackContent.title, author: substackContent.author }
+      }
+
+      // Fall back to Readability for other sites
       const parser = new DOMParser()
       const doc = parser.parseFromString(html, 'text/html')
 

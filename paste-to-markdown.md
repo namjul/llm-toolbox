@@ -69,10 +69,14 @@ EOF
 
 ### `fetchArticle(url)`
 - Fetches page via CORS proxy (`https://corsproxy.io/?`)
-- Parses HTML into DOM
-- Extracts article using Readability
-- Extracts published date
-- Returns article object with title, date, and content
+- Tries Substack extraction first, falls back to Readability
+- Extracts published date and author
+- Returns article object with title, date, author, and content
+
+### `extractSubstackContent(html)`
+- Extracts article from Substack's `window._preloads` JSON
+- Returns title, date, author, and body_html
+- Returns null for non-Substack pages
 
 ### `extractDate(doc, article)`
 - Extracts published date from multiple sources (in order):
