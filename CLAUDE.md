@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This repo is a toolbox. Each tool is a self-contained single HTML file (SPA).
+This repo is a toolbox. Each tool is a self-contained single HTML file (SPA) built mostly with the help of LLMs.
 
 ## Architecture
 
@@ -18,6 +18,7 @@ Constraints:
 - **No TypeScript** - plain JavaScript only
 - **Single file** - all HTML, CSS, and JS in one file
 - **No script tags for JS libraries** - all JavaScript dependencies must be loaded via importmap, never via `<script src="...">` tags (CSS stylesheets via `<link>` are fine)
+- **Zag.js for complex UI components** - prefer [Zag.js](https://zagjs.com/) for complex accessible components (dialogs, menus, comboboxes) when the accessibility requirements justify the setup. For simple controls like toggles or button groups, Spellcaster signals with native elements are sufficient and simpler. Note: Zag.js vanilla JS usage requires custom infrastructure not exported from the package.
 
 ## Template Structure
 
