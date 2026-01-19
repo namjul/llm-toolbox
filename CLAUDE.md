@@ -48,6 +48,15 @@ Constraints:
 </html>
 ```
 
+## Tool Index
+
+`index.html` lists all tools in this repo. **When adding or removing a tool, always update index.html.**
+
+Each tool entry includes:
+- Link to the tool's HTML file
+- Tool name
+- Short description
+
 ## Tool Documentation (Bidirectional Mirror)
 
 Each tool has a matching `.md` file that serves as the authoritative reference. For example, `paste-to-markdown.html` has `paste-to-markdown.md`.
