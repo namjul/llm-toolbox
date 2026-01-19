@@ -64,6 +64,10 @@ Each tool has a matching `.md` file that serves as the authoritative reference. 
 
 **These files are bidirectional mirrors: a change in one implies a change in the other.**
 
+**IMPORTANT: After ANY change to either file, ALWAYS update the other file in the same response. Do not wait to be asked.**
+- Change `.html` → update `.md` to document the new behavior
+- Change `.md` → update `.html` to implement the documented behavior
+
 The `.md` file contains:
 - Purpose and description of the tool
 - UI components and their behavior

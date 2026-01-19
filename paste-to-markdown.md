@@ -13,28 +13,56 @@ Two input modes:
 ### Copy Mode (default)
 - Output: Markdown text, auto-selected for copying
 
-### File Mode
-- Output: bash/fish command to create a file
-- User provides an "area" prefix (e.g., "reading")
-- Filename: `{area}.{slugified-title}.md`
+### Command Mode
+- Output: bash/fish command to paste into CLI that creates a file
+- Filename auto-generated from title as `{slugified-title}.md`, or current date if no title
+- User can edit the filename directly in the input field
+- Optional prefix with variable support (persisted in localStorage)
 
-Example output:
+#### Prefix Feature
+- Checkbox to enable/disable prefix (persisted, default: disabled)
+- Prefix template input (persisted, defaults to `{author}` if empty)
+- Output format: `{resolved-prefix}.{filename}.md` or `{filename}.md` if disabled
+
+#### Supported Variables
+| Variable | Description |
+|----------|-------------|
+| `{author}` | Slugified author name |
+| `{title}` | Slugified article title |
+| `{date}` | Article date as YYYY.MM.DD |
+| `{year}` | Article year (4 digits) |
+| `{month}` | Article month (2 digits) |
+| `{day}` | Article day (2 digits) |
+| `{domain}` | Slugified source domain (without www) |
+
+Example output (with prefix `{author}`):
 ```bash
-cat > "reading.how-to-build-a-web-app.md" << 'EOF'
-title: How to Build a Web App
+printf '%s' 'title: How to Build a Web App
 author: John Doe
 date: 2026-01-18
 source: https://example.com
 
-Content here...
-EOF
+Content here...' > "john-doe.how-to-build-a-web-app.md"
+```
+
+Example output (without prefix):
+```bash
+printf '%s' 'title: How to Build a Web App
+author: John Doe
+date: 2026-01-18
+source: https://example.com
+
+Content here...' > "how-to-build-a-web-app.md"
 ```
 
 ## UI Components
 
 ### Header Bar
-- Mode toggle: Copy / File
-- Area input (visible in file mode)
+- Mode toggle: Copy / Command
+- Prefix checkbox (visible in command mode): enables/disables prefix, persisted in localStorage
+- Prefix input (visible when checkbox enabled): template with variable support, persisted in localStorage
+- Filename input (visible in command mode): shows auto-generated base filename (placeholder shows default), editable by user, `.md` extension displayed as static suffix
+- On blur of prefix/filename inputs, re-selects output for copying
 
 ### State 1: Empty (Initial)
 - Full-page paste target
@@ -46,6 +74,8 @@ EOF
 ### State 3: Result
 - Contenteditable div displaying the output with syntax highlighting
 - All text automatically selected for immediate copy (Ctrl+C)
+- Auto-selection triggers on: new paste, mode change, or input blur (prefix/filename)
+- Inputs can be edited without losing focus to the output
 - Press Escape to reset to State 1
 
 ## Dependencies
@@ -108,10 +138,21 @@ EOF
 - Includes title, author, date, source (if available)
 - Blank line separates metadata from content
 
-### `buildFileCommand(area, title, markdown)`
+### `buildFileCommand(prefix, filename, markdown)`
 - Generates bash/fish-compatible command
-- Filename: `{area}.{slugified-title}.md`
-- Uses heredoc with 'EOF' to handle special characters
+- Combines prefix and filename: `{prefix}.{filename}.md` or `{filename}.md` if no prefix
+- Uses printf with escaped single quotes for shell compatibility
+
+### `generateFilename(title)`
+- Generates default base filename from title (without extension)
+- Returns `{slugified-title}` if title exists
+- Falls back to current date `{YYYY.MM.DD}` if no title
+
+### `resolvePrefix(template, article)`
+- Replaces variables in prefix template with article metadata
+- Supported variables: `{author}`, `{title}`, `{date}`, `{year}`, `{month}`, `{day}`, `{domain}`
+- Returns empty string if template is empty
+- Unrecognized variables are left unchanged
 
 Output format:
 ```

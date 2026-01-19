@@ -39,9 +39,19 @@
     const turndown = new TurndownService({ headingStyle: 'atx' })
 
     // State
-    const [mode, setMode] = signal('copy') // 'copy' | 'file'
-    const [area, setArea] = signal('')
-    const [state, setState] = signal('empty') // 'empty' | 'loading' | { markdown, title, author }
+    const [mode, setMode] = signal('copy') // 'copy' | 'command'
+    const [filename, setFilename] = signal('')
+    const [prefixEnabled, setPrefixEnabled] = signal(localStorage.getItem('prefixEnabled') === 'true') // default: false
+    const [prefix, setPrefix] = signal(localStorage.getItem('prefix') || '{author}')
+    const [state, setState] = signal('empty') // 'empty' | 'loading' | { markdown, title, author, date, source }
+
+    // Persist prefix settings
+    effect(() => {
+      localStorage.setItem('prefixEnabled', prefixEnabled())
+    })
+    effect(() => {
+      localStorage.setItem('prefix', prefix())
+    })
 
     const isUrl = (text) => {
       const trimmed = text.trim()
@@ -182,12 +192,49 @@
       return contentMd
     }
 
-    const buildFileCommand = (area, title, markdown) => {
-      const slug = slugify(title || 'untitled')
-      const filename = `${area}.${slug}.md`
+    const buildFileCommand = (prefix, filename, markdown) => {
       // Escape single quotes for shell: ' becomes '\''
       const escaped = markdown.replace(/'/g, "'\\''")
-      return `printf '%s' '${escaped}' > "${filename}"`
+      const fullFilename = prefix ? `${prefix}.${filename}.md` : `${filename}.md`
+      return `printf '%s' '${escaped}' > "${fullFilename}"`
+    }
+
+    const generateFilename = (title) => {
+      if (title) {
+        return slugify(title)
+      }
+      const now = new Date()
+      return now.toISOString().split('T')[0].replace(/-/g, '.')
+    }
+
+    const resolvePrefix = (template, article) => {
+      if (!template) return ''
+
+      const now = new Date()
+      const articleDate = article.date ? new Date(article.date) : now
+      const dateStr = articleDate.toISOString().split('T')[0].replace(/-/g, '.')
+      const [year, month, day] = articleDate.toISOString().split('T')[0].split('-')
+
+      let domain = ''
+      if (article.source) {
+        try {
+          domain = new URL(article.source).hostname.replace(/^www\./, '')
+        } catch (e) {}
+      }
+
+      const variables = {
+        author: article.author ? slugify(article.author) : '',
+        title: article.title ? slugify(article.title) : '',
+        date: dateStr,
+        year,
+        month,
+        day,
+        domain: domain ? slugify(domain) : ''
+      }
+
+      return template.replace(/\{(\w+)\}/g, (match, key) => {
+        return variables[key] !== undefined ? variables[key] : match
+      })
     }
 
     const extractSubstackContent = (html) => {
@@ -227,7 +274,7 @@
           date: substackContent.date,
           source: url
         }, contentMd)
-        return { markdown, title: substackContent.title, author: substackContent.author }
+        return { markdown, title: substackContent.title, author: substackContent.author, date: substackContent.date, source: url }
       }
 
       // Fall back to Readability for other sites
@@ -256,7 +303,7 @@
       const contentMd = turndown.turndown(article.content)
       const markdown = buildMarkdown({ title: article.title, author, date, source: url }, contentMd)
 
-      return { markdown, title: article.title, author }
+      return { markdown, title: article.title, author, date, source: url }
     }
 
     const selectAllContent = (element) => {
@@ -308,39 +355,85 @@
         text('Copy')
       )
 
-      const fileBtn = button(
+      const commandBtn = button(
         {
           className: 'px-3 py-1 rounded text-sm',
-          onclick: () => setMode('file')
+          onclick: () => setMode('command')
         },
-        text('File')
+        text('Command')
       )
 
-      const areaContainer = div({ className: 'flex items-center gap-2' })
-      const areaLabel = label({ className: 'text-sm text-gray-600' }, text('Area:'))
-      const areaInput = input({
-        type: 'text',
-        className: 'px-2 py-1 border border-gray-300 rounded text-sm w-48',
-        placeholder: 'author (default)',
-        oninput: (e) => setArea(e.target.value)
+      // Prefix controls
+      const prefixContainer = div({ className: 'flex items-center gap-2' })
+      const prefixCheckbox = input({
+        type: 'checkbox',
+        className: 'w-4 h-4',
+        checked: prefixEnabled(),
+        onchange: (e) => setPrefixEnabled(e.target.checked)
       })
-      areaContainer.append(areaLabel, areaInput)
+      const prefixLabel = label({ className: 'text-sm text-gray-600 flex items-center gap-1' })
+      prefixLabel.append(prefixCheckbox, text('Prefix:'))
+      const prefixInput = input({
+        type: 'text',
+        className: 'px-2 py-1 border border-gray-300 rounded text-sm w-32',
+        placeholder: '{author}',
+        value: prefix(),
+        oninput: (e) => setPrefix(e.target.value),
+        onblur: () => {
+          const output = document.querySelector('#app pre[contenteditable]')
+          if (output) {
+            output.focus()
+            selectAllContent(output)
+          }
+        }
+      })
+      prefixContainer.append(prefixLabel, prefixInput)
 
+      // Show/hide prefix input based on checkbox
+      effect(() => {
+        prefixInput.style.display = prefixEnabled() ? 'block' : 'none'
+      })
+
+      // Filename controls
+      const filenameContainer = div({ className: 'flex items-center gap-2' })
+      const filenameLabel = label({ className: 'text-sm text-gray-600' }, text('Filename:'))
+      const filenameInput = input({
+        type: 'text',
+        className: 'px-2 py-1 border border-gray-300 rounded text-sm w-64',
+        placeholder: generateFilename(),
+        oninput: (e) => setFilename(e.target.value),
+        onblur: () => {
+          const output = document.querySelector('#app pre[contenteditable]')
+          if (output) {
+            output.focus()
+            selectAllContent(output)
+          }
+        }
+      })
+      const extensionLabel = span({ className: 'text-sm text-gray-600' }, text('.md'))
+      filenameContainer.append(filenameLabel, filenameInput, extensionLabel)
+
+      // Auto-populate filename when state changes
       effect(() => {
         const current = state()
-        if (current !== 'empty' && current !== 'loading' && current.author && !area()) {
-          areaInput.placeholder = slugify(current.author)
+        if (current !== 'empty' && current !== 'loading' && current.title) {
+          const generated = generateFilename(current.title)
+          if (!filename()) {
+            filenameInput.value = generated
+            setFilename(generated)
+          }
         }
       })
 
-      modeToggle.append(copyBtn, fileBtn)
-      header.append(modeToggle, areaContainer)
+      modeToggle.append(copyBtn, commandBtn)
+      header.append(modeToggle, prefixContainer, filenameContainer)
 
       effect(() => {
         const currentMode = mode()
         copyBtn.className = `px-3 py-1 rounded text-sm ${currentMode === 'copy' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'}`
-        fileBtn.className = `px-3 py-1 rounded text-sm ${currentMode === 'file' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'}`
-        areaContainer.style.display = currentMode === 'file' ? 'flex' : 'none'
+        commandBtn.className = `px-3 py-1 rounded text-sm ${currentMode === 'command' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'}`
+        prefixContainer.style.display = currentMode === 'command' ? 'flex' : 'none'
+        filenameContainer.style.display = currentMode === 'command' ? 'flex' : 'none'
       })
 
       return header
@@ -351,10 +444,19 @@
         { className: 'flex-1 flex items-center justify-center p-10 overflow-hidden' }
       )
 
+      let lastState = null
+      let lastMode = null
+
       effect(() => {
         const current = state()
         const currentMode = mode()
-        const currentArea = area()
+        const currentFilename = filename()
+        const currentPrefixEnabled = prefixEnabled()
+        const currentPrefix = prefix()
+        const shouldAutoSelect = current !== lastState || currentMode !== lastMode
+        lastState = current
+        lastMode = currentMode
+
         container.innerHTML = ''
 
         if (current === 'empty') {
@@ -370,14 +472,15 @@
           )
           container.appendChild(loading)
         } else {
-          const { markdown, title, author } = current
-          const effectiveArea = currentArea || slugify(author || 'unknown')
-          const outputText = currentMode === 'file'
-            ? buildFileCommand(effectiveArea, title, markdown)
+          const { markdown, title, author, date, source } = current
+          const effectiveFilename = currentFilename || generateFilename(title)
+          const resolvedPrefix = currentPrefixEnabled ? resolvePrefix(currentPrefix, { title, author, date, source }) : ''
+          const outputText = currentMode === 'command'
+            ? buildFileCommand(resolvedPrefix, effectiveFilename, markdown)
             : markdown
 
-          const lang = currentMode === 'file' ? 'bash' : 'markdown'
-          const grammar = currentMode === 'file' ? Prism.languages.bash : Prism.languages.markdown
+          const lang = currentMode === 'command' ? 'bash' : 'markdown'
+          const grammar = currentMode === 'command' ? Prism.languages.bash : Prism.languages.markdown
 
           const output = document.createElement('pre')
           output.className = 'w-full h-full p-6 bg-white rounded-lg shadow-sm overflow-auto !whitespace-pre-wrap !break-words font-mono text-sm focus:outline-none'
@@ -385,10 +488,13 @@
           output.innerHTML = Prism.highlight(outputText, grammar, lang)
           container.appendChild(output)
 
-          requestAnimationFrame(() => {
-            output.focus()
-            selectAllContent(output)
-          })
+          // Auto-focus and select on new paste or mode change, but not when typing in area input
+          if (shouldAutoSelect) {
+            requestAnimationFrame(() => {
+              output.focus()
+              selectAllContent(output)
+            })
+          }
 
           output.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
