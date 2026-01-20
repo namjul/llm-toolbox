@@ -35,7 +35,7 @@
     import 'prismjs/components/prism-bash'
     import { Readability } from '@mozilla/readability'
 
-    const { div, p, button, input, label, span } = tags
+    const { div, p, pre, button, input, label, span } = tags
     const turndown = new TurndownService({ headingStyle: 'atx' })
 
     // State
@@ -343,36 +343,17 @@
     }
 
     const Header = () => {
-      const header = div({ className: 'flex items-center gap-4 p-4 bg-white border-b border-gray-200' })
-
-      const modeToggle = div({ className: 'flex items-center gap-2' })
-
+      // Mode buttons (need refs for dynamic className)
       const copyBtn = button(
-        {
-          className: 'px-3 py-1 rounded text-sm',
-          onclick: () => setMode('copy')
-        },
+        { className: 'px-3 py-1 rounded text-sm', onclick: () => setMode('copy') },
         text('Copy')
       )
-
       const commandBtn = button(
-        {
-          className: 'px-3 py-1 rounded text-sm',
-          onclick: () => setMode('command')
-        },
+        { className: 'px-3 py-1 rounded text-sm', onclick: () => setMode('command') },
         text('Command')
       )
 
-      // Prefix controls
-      const prefixContainer = div({ className: 'flex items-center gap-2' })
-      const prefixCheckbox = input({
-        type: 'checkbox',
-        className: 'w-4 h-4',
-        checked: prefixEnabled(),
-        onchange: (e) => setPrefixEnabled(e.target.checked)
-      })
-      const prefixLabel = label({ className: 'text-sm text-gray-600 flex items-center gap-1' })
-      prefixLabel.append(prefixCheckbox, text('Prefix:'))
+      // Prefix input (needs ref for show/hide effect)
       const prefixInput = input({
         type: 'text',
         className: 'px-2 py-1 border border-gray-300 rounded text-sm w-32',
@@ -387,16 +368,8 @@
           }
         }
       })
-      prefixContainer.append(prefixLabel, prefixInput)
 
-      // Show/hide prefix input based on checkbox
-      effect(() => {
-        prefixInput.style.display = prefixEnabled() ? 'block' : 'none'
-      })
-
-      // Filename controls
-      const filenameContainer = div({ className: 'flex items-center gap-2' })
-      const filenameLabel = label({ className: 'text-sm text-gray-600' }, text('Filename:'))
+      // Filename input (needs ref for auto-populate effect)
       const filenameInput = input({
         type: 'text',
         className: 'px-2 py-1 border border-gray-300 rounded text-sm w-64',
@@ -410,10 +383,41 @@
           }
         }
       })
-      const extensionLabel = span({ className: 'text-sm text-gray-600' }, text('.md'))
-      filenameContainer.append(filenameLabel, filenameInput, extensionLabel)
 
-      // Auto-populate filename when state changes
+      // Containers (need refs for show/hide effects)
+      const prefixContainer = div(
+        { className: 'flex items-center gap-2' },
+        [
+          label(
+            { className: 'text-sm text-gray-600 flex items-center gap-1' },
+            [
+              input({
+                type: 'checkbox',
+                className: 'w-4 h-4',
+                checked: prefixEnabled(),
+                onchange: (e) => setPrefixEnabled(e.target.checked)
+              }),
+              span({}, text('Prefix:'))
+            ]
+          ),
+          prefixInput
+        ]
+      )
+
+      const filenameContainer = div(
+        { className: 'flex items-center gap-2' },
+        [
+          label({ className: 'text-sm text-gray-600' }, text('Filename:')),
+          filenameInput,
+          span({ className: 'text-sm text-gray-600' }, text('.md'))
+        ]
+      )
+
+      // Effects for dynamic updates
+      effect(() => {
+        prefixInput.style.display = prefixEnabled() ? 'block' : 'none'
+      })
+
       effect(() => {
         const current = state()
         if (current !== 'empty' && current !== 'loading' && current.title) {
@@ -425,9 +429,6 @@
         }
       })
 
-      modeToggle.append(copyBtn, commandBtn)
-      header.append(modeToggle, prefixContainer, filenameContainer)
-
       effect(() => {
         const currentMode = mode()
         copyBtn.className = `px-3 py-1 rounded text-sm ${currentMode === 'copy' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'}`
@@ -436,7 +437,14 @@
         filenameContainer.style.display = currentMode === 'command' ? 'flex' : 'none'
       })
 
-      return header
+      return div(
+        { className: 'flex items-center gap-4 p-4 bg-white border-b border-gray-200' },
+        [
+          div({ className: 'flex items-center gap-2' }, [copyBtn, commandBtn]),
+          prefixContainer,
+          filenameContainer
+        ]
+      )
     }
 
     const Content = () => {
@@ -460,17 +468,13 @@
         container.innerHTML = ''
 
         if (current === 'empty') {
-          const instructions = p(
-            { className: 'text-gray-400 text-2xl select-none' },
-            text('Paste content or URL (Ctrl+V)')
+          container.appendChild(
+            p({ className: 'text-gray-400 text-2xl select-none' }, text('Paste content or URL (Ctrl+V)'))
           )
-          container.appendChild(instructions)
         } else if (current === 'loading') {
-          const loading = p(
-            { className: 'text-gray-400 text-2xl select-none' },
-            text('Loading article...')
+          container.appendChild(
+            p({ className: 'text-gray-400 text-2xl select-none' }, text('Loading article...'))
           )
-          container.appendChild(loading)
         } else {
           const { markdown, title, author, date, source } = current
           const effectiveFilename = currentFilename || generateFilename(title)
@@ -482,44 +486,36 @@
           const lang = currentMode === 'command' ? 'bash' : 'markdown'
           const grammar = currentMode === 'command' ? Prism.languages.bash : Prism.languages.markdown
 
-          const output = document.createElement('pre')
-          output.className = 'w-full h-full p-6 bg-white rounded-lg shadow-sm overflow-auto !whitespace-pre-wrap !break-words font-mono text-sm focus:outline-none'
-          output.contentEditable = 'true'
+          const output = pre({
+            className: 'w-full h-full p-6 bg-white rounded-lg shadow-sm overflow-auto !whitespace-pre-wrap !break-words font-mono text-sm focus:outline-none',
+            contentEditable: 'true',
+            onkeydown: (e) => { if (e.key === 'Escape') reset() },
+            oncopy: (e) => {
+              e.preventDefault()
+              e.clipboardData.setData('text/plain', outputText)
+            }
+          })
           output.innerHTML = Prism.highlight(outputText, grammar, lang)
           container.appendChild(output)
 
-          // Auto-focus and select on new paste or mode change, but not when typing in area input
           if (shouldAutoSelect) {
             requestAnimationFrame(() => {
               output.focus()
               selectAllContent(output)
             })
           }
-
-          output.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-              reset()
-            }
-          })
-
-          output.addEventListener('copy', (e) => {
-            e.preventDefault()
-            e.clipboardData.setData('text/plain', outputText)
-          })
         }
       })
 
       return container
     }
 
-    const App = () => {
-      const app = div({ className: 'h-full flex flex-col' })
-      app.append(Header(), Content())
-      return app
-    }
+    const App = () => div(
+      { className: 'h-full flex flex-col' },
+      [Header(), Content()]
+    )
 
-    const app = document.getElementById('app')
-    app.appendChild(App())
+    document.getElementById('app').appendChild(App())
 
     document.addEventListener('paste', handlePaste)
   </script>
