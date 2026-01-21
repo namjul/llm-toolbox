@@ -239,6 +239,37 @@
       })
     }
 
+    const isTwitterUrl = (url) => {
+      try {
+        const hostname = new URL(url).hostname
+        return hostname === 'x.com' || hostname === 'twitter.com' ||
+               hostname === 'www.x.com' || hostname === 'www.twitter.com'
+      } catch (e) {
+        return false
+      }
+    }
+
+    const fetchTwitterContent = async (url) => {
+      const oembedUrl = `https://publish.twitter.com/oembed?url=${encodeURIComponent(url)}`
+      const response = await fetch(oembedUrl)
+      if (!response.ok) return null
+
+      const data = await response.json()
+      // Extract text from the html blockquote
+      const parser = new DOMParser()
+      const doc = parser.parseFromString(data.html, 'text/html')
+      const blockquote = doc.querySelector('blockquote')
+      const tweetText = blockquote ? blockquote.textContent.trim() : ''
+
+      return {
+        content: tweetText,
+        author: data.author_name,
+        title: `Tweet by ${data.author_name}`,
+        date: null,
+        source: url
+      }
+    }
+
     const extractSubstackContent = (html) => {
       const preloadsMatch = html.match(/window\._preloads\s*=\s*JSON\.parse\("(.+?)"\)/)
       if (!preloadsMatch) return null
@@ -263,6 +294,20 @@
     }
 
     const fetchArticle = async (url) => {
+      // Try Twitter/X.com via oEmbed (no CORS proxy needed)
+      if (isTwitterUrl(url)) {
+        const twitterContent = await fetchTwitterContent(url)
+        if (twitterContent) {
+          const markdown = buildMarkdown({
+            title: twitterContent.title,
+            author: twitterContent.author,
+            date: twitterContent.date,
+            source: url
+          }, twitterContent.content)
+          return { markdown, ...twitterContent }
+        }
+      }
+
       const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`
       const response = await fetch(proxyUrl)
       const html = await response.text()

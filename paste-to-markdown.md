@@ -8,6 +8,11 @@ Two input modes:
 1. **Rich text**: Copy formatted text from a website, paste here, get Markdown
 2. **URL**: Paste an article URL, tool fetches and extracts the main content as Markdown
 
+Supported URL sources:
+- **Twitter/X.com**: Tweets via oEmbed API
+- **Substack**: Articles via preloaded JSON data
+- **General websites**: Articles via Mozilla Readability
+
 ## Output Modes
 
 ### Copy Mode (default)
@@ -82,10 +87,10 @@ Content here...' > "how-to-build-a-web-app.md"
 
 | Library | Version | Purpose |
 |---------|---------|---------|
-| turndown | latest | Convert HTML to Markdown |
-| @mozilla/readability | latest | Extract article content from web pages |
-| spellcaster | latest | Reactive state management |
-| prismjs | latest | Markdown syntax highlighting |
+| spellcaster | 6.0.0 | Reactive state management and hyperscript |
+| turndown | 7.1.2 | Convert HTML to Markdown |
+| @mozilla/readability | 0.5.0 | Extract article content from web pages |
+| prismjs | 1.29.0 | Markdown/bash syntax highlighting |
 
 ## Key Functions
 
@@ -98,10 +103,21 @@ Content here...' > "how-to-build-a-web-app.md"
 - Returns true if text matches URL pattern (http/https)
 
 ### `fetchArticle(url)`
-- Fetches page via CORS proxy (`https://corsproxy.io/?`)
-- Tries Substack extraction first, falls back to Readability
+- Tries platform-specific extraction in order:
+  1. Twitter/X.com via oEmbed API (no CORS proxy needed)
+  2. Substack via `window._preloads` JSON
+  3. Generic extraction via Readability
+- Fetches page via CORS proxy (`https://corsproxy.io/?`) for generic sites
 - Extracts published date and author
 - Returns article object with title, date, author, and content
+
+### `isTwitterUrl(url)`
+- Returns true if URL is from x.com or twitter.com
+
+### `fetchTwitterContent(url)`
+- Fetches tweet via Twitter's oEmbed API (`publish.twitter.com/oembed`)
+- Extracts tweet text from the returned HTML blockquote
+- Returns object with content, author, title ("Tweet by {author}"), and source
 
 ### `extractSubstackContent(html)`
 - Extracts article from Substack's `window._preloads` JSON

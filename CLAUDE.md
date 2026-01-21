@@ -12,6 +12,7 @@ Each HTML file must be **directly runnable in a browser** - just open the file, 
 
 Constraints:
 
+- ⛔ **HTML/MD sync is mandatory** - NEVER edit a `.html` file without updating its `.md` file in the SAME response, and vice versa. No exceptions.
 - **Tailwind CSS** via CDN (`@tailwindcss/browser@4`) for all styling
 - **ES modules** via `importmap` for dependencies
 - **esm.sh** for npm packages (e.g., `https://esm.sh/package@version`)
@@ -64,7 +65,13 @@ Each tool has a matching `.md` file that serves as the authoritative reference. 
 
 **These files are bidirectional mirrors: a change in one implies a change in the other.**
 
-**IMPORTANT: After ANY change to either file, ALWAYS update the other file in the same response. Do not wait to be asked.**
+### ⛔ HARD RULE: Mandatory Sync
+
+**NEVER edit a `.html` file without updating its `.md` file in the SAME response.**
+**NEVER edit a `.md` file without updating its `.html` file in the SAME response.**
+
+This is NON-NEGOTIABLE. No exceptions. No "I'll do it later." No waiting to be asked.
+
 - Change `.html` → update `.md` to document the new behavior
 - Change `.md` → update `.html` to implement the documented behavior
 
