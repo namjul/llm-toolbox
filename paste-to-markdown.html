@@ -17,6 +17,7 @@
     "imports": {
       "spellcaster": "https://esm.sh/spellcaster@6.0.0",
       "spellcaster/hyperscript": "https://esm.sh/spellcaster@6.0.0/hyperscript.js",
+      "dope": "https://esm.sh/gh/gordonbrander/dope",
       "turndown": "https://esm.sh/turndown@7.1.2",
       "prismjs": "https://esm.sh/prismjs@1.29.0",
       "prismjs/components/prism-markdown": "https://esm.sh/prismjs@1.29.0/components/prism-markdown.js",
@@ -34,6 +35,7 @@
     import 'prismjs/components/prism-markdown'
     import 'prismjs/components/prism-bash'
     import { Readability } from '@mozilla/readability'
+    import { get }  from 'dope'
 
     const { div, p, pre, button, input, label, span } = tags
     const turndown = new TurndownService({ headingStyle: 'atx' })
@@ -245,12 +247,13 @@
         const jsonStr = preloadsMatch[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\')
         const preloads = JSON.parse(jsonStr)
 
-        if (preloads.post?.body_html) {
+        const post = get(preloads, ['post']) ?? get(preloads, ['feedData', 'initialPost', 'post'])
+        if (post?.body_html) {
           return {
-            content: preloads.post.body_html,
-            title: preloads.post.title,
-            date: preloads.post.post_date,
-            author: preloads.post.publishedBylines?.[0]?.name
+            content: post.body_html,
+            title: post.title,
+            date: post.post_date,
+            author: post.publishedBylines?.[0]?.name
           }
         }
       } catch (e) {
