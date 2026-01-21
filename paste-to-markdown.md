@@ -115,9 +115,11 @@ Content here...' > "how-to-build-a-web-app.md"
 - Returns true if URL is from x.com or twitter.com
 
 ### `fetchTwitterContent(url)`
-- Fetches tweet via Twitter's oEmbed API (`publish.twitter.com/oembed`)
-- Extracts tweet text from the returned HTML blockquote
-- Returns object with content, author, title ("Tweet by {author}"), and source
+- Extracts username and tweet ID from URL
+- Fetches tweet via FxTwitter API (`api.fxtwitter.com/{user}/status/{id}`)
+- Returns full tweet text (not truncated like oEmbed)
+- Converts Unix timestamp to ISO date
+- Returns object with content, author, title ("Tweet by {author}"), date, and source
 
 ### `extractSubstackContent(html)`
 - Extracts article from Substack's `window._preloads` JSON

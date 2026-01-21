@@ -117,3 +117,25 @@ For non-trivial tasks (new tools, refactors, significant changes), **respond wit
 Once confirmed, write/update the tool's `.md` file first, then implement the `.html` file.
 
 **Scope**: Required for new tools and significant changes. Skip for trivial tasks (formatting, typos, scoped one-line changes).
+
+### Commit Messages
+
+Use [Conventional Commits](https://www.conventionalcommits.org/) with the tool name as scope:
+
+```
+type(tool-name): description
+```
+
+| Type | Usage |
+|------|-------|
+| `feat` | New feature or functionality |
+| `fix` | Bug fix |
+| `refactor` | Code change that neither fixes a bug nor adds a feature |
+| `docs` | Documentation only (CLAUDE.md, README) |
+| `chore` | Maintenance (dependencies, config) |
+
+Examples:
+- `feat(paste-to-markdown): add Twitter/X.com support`
+- `fix(paste-to-markdown): handle empty URL edge case`
+- `refactor(paste-to-markdown): use Spellcaster v6 idioms`
+- `docs: strengthen HTML/MD sync rule` (no scope for project-wide docs)
